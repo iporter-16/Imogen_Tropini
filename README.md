@@ -23,3 +23,5 @@ Designed to read through glycoside hydrolase annotations (created by dbCAN3) on 
 **fam-substrate-mapping-08012023.tsv** obtained from dbCAN3, contains information about each GH family (substrate, enzyme name, etc.)
 
 **Muribaculaceae_genomes/Annotations/** a directory containing the annotated genomes on which analysis is performed. Each sub-directory is named according to its genome, and contains the many outputs of dbCAN3 annotation. For this pipeline, specifically the **hmmer.out** file is required for each.
+
+The data (substrate and source counts) produced by this code are also included for ease of access. The 'detailed' file adds the coverage and e values if this is of interest, as well as the more detailed GH profiles (for those with sub-profiles).
