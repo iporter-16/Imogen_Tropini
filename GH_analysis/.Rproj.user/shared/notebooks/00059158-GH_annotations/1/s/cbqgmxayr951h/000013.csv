@@ -1,0 +1,6 @@
+"0","substrate_info <- read.delim2(""fam-substrate-mapping-08012023.tsv"") %>%"
+"0","  select(Substrate_high_level, Family) %>% unique() %>%"
+"0","  group_by(Family) %>%"
+"0","  summarise(Substrates = paste(Substrate_high_level, collapse = "", ""), .groups = 'drop') %>%"
+"0","  filter(nzchar(Family)) %>%"
+"0","  left_join(sources.df, by = join_by(Family==Family))"

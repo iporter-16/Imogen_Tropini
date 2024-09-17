@@ -1,0 +1,8 @@
+organism: Muribaculum intestinale strain 
+contigs: 284
+bases: 3578749
+CDS: 3065
+rRNA: 4
+repeat_region: 1
+tRNA: 54
+tmRNA: 1
