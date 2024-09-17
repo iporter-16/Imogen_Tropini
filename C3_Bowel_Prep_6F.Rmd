@@ -1,0 +1,135 @@
+---
+title: "C3_MiSeq_2024_IP"
+output: html_document
+date: '2022-06-14'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Bacterial translocation heatmaps (Y/N binary)
+```{r}
+library(phyloseq)
+library(dplyr)
+library(ggplot2)
+library(vegan)
+library(ape)
+library(here)
+library(tidyverse)
+library(readxl)
+library(RColorBrewer)
+
+L6_data_w_mapping <- read.csv("L6_data_w_mapping.csv")
+basic_metadata <- read_excel("C3_basic_metadata.xlsx")
+
+#HEAT MAPS OF TRANSLOCATING BACTERIA 
+TLdata <- read.csv("C3_MiSeq_translocation.csv")%>%   pivot_longer(names_to = "Sample", values_to = "presence", cols = starts_with("CC"))
+TLdata$Sample <- gsub("_","-",TLdata$Sample)
+
+#combine the dataframes together to assign the metadata to the family and the sample 
+TLdata_w_mapping <- TLdata %>% left_join(basic_metadata, by=c("Sample"= "index"))
+write.csv(TLdata_w_mapping,"C3_MiSeq_pivot_translocation.csv")
+
+translocation <- read.csv("C3_MiSeq_pivot_translocation.csv")
+translocation$Timepoint <- factor(translocation$Timepoint,levels=c("baseline","24h","recovery"))
+
+```
+
+# New heatmap IP
+```{r}
+#Goal: "plot for the microbes that have translocated post bowel prep in heatmap form to see if any of them increased in abundance during osmotic diarrhea, from a preliminary look it seems like several of them did. I suggest doing this by plotting the average abundance across mice for a timepoint, all normalized to the average of the baseline."
+
+# Obtain taxa from filtering translocation for the list of taxa 'yes' in MLN
+x <- translocation %>% filter(Tissue=="MLN") 
+b_no <- filter(x,Timepoint=="baseline" & presence=="No")$Taxa %>% unique()
+t_yes <- filter(x,Timepoint=="24h" & presence=="Yes")$Taxa %>% unique()
+translocated_taxa <- as.list(intersect(b_no,t_yes))
+
+# Find limit of detection, to adjust for zero values
+lim_detect <- min(L6_data_w_mapping$Relative_abundance[L6_data_w_mapping$Relative_abundance!=0])
+
+# Filter the L6 data with mapping to just these taxa
+translocated_L6 <- L6_data_w_mapping %>% filter(Taxa %in% translocated_taxa) %>%
+  filter(Tissue=="Feces") %>%
+  subset(select = -c(Tissue,BP)) %>%
+  group_by(Taxa,Timepoint) %>%
+  summarise(mean_abundance=mean(Relative_abundance)) %>%
+  mutate(mean_abundance= ifelse(mean_abundance==0,lim_detect/2,mean_abundance)) %>%
+  pivot_wider(names_from = Timepoint, values_from = c(mean_abundance))
+
+# Normalise the values and pivot the data long for plotting.
+translocated_L6_norm <- translocated_L6 %>%
+  mutate(osmotic_diarrhea=osmotic_diarrhea/baseline,
+         recovery=recovery/baseline,
+         `48h`=`48h`/baseline,
+         `60h`=`60h`/baseline, 
+         baseline=baseline/baseline) 
+colnames(translocated_L6_norm) <- c("Taxa", "48h post-BP", "60h post-BP", "baseline", 
+                                    "6h post-BP", "recovery")
+translocated_L6_norm <- translocated_L6_norm %>%
+  pivot_longer(cols=!Taxa,names_to="Timepoint",values_to="Norm_abundance") %>%
+  mutate(Norm_abundance=log2(Norm_abundance)) 
+translocated_L6_norm$Timepoint <- factor(translocated_L6_norm$Timepoint,
+                               levels=c("baseline","6h post-BP","48h post-BP","60h post-BP","recovery"))
+
+
+####################################################################################
+# Just for 6h
+# translocated_L6_norm_post <-  translocated_L6_norm %>% filter(Timepoint=="6h post-BP")
+
+# Filters data for up/downregulated taxa as requested.
+filter_for_heatmap <-  function(dataset,change="all"){
+  if(change=="up"){ p <- dataset %>% filter(Norm_abundance>=0) }
+  else if(change=="down"){p <- dataset %>% filter(Norm_abundance<=0) }
+  else {p <- dataset}
+  return(p)
+  }
+
+# Changes colour scheme depending on whether change is uni or bi directional
+colour_for_heatmap <-  function(dataset,change="all"){
+  if(change=="up"){col <- scale_fill_gradientn(colors=c("#f7f7f7","#1c4e73"))}
+  else if(change=="down"){col <- scale_fill_gradientn(colors=c("#ef8a62","#f7f7f7"))}
+  else {col <- scale_fill_gradient2(low="#ef8a62",mid="#f7f7f7",high="#1c4e73")}
+  return(col)
+  }
+
+# Takes in the normalised dataset, the change you want ("all", "up", or "down"), and the Timepoint groups as they appear in the metadata (eg. "6h post-BP")
+# Returns a heatmap.
+translocated_heatmap <- function(dataset,change="all",group="6h post-BP"){
+  p <- filter_for_heatmap(dataset,change) %>% filter(Timepoint%in%group)
+  # return(p)
+  col <- colour_for_heatmap(dataset,change)
+  p <- p %>%
+  ggplot(aes(x=Timepoint,y=Taxa,fill=Norm_abundance)) +
+  geom_tile()+
+  geom_tile(color = "white",lwd = 0.2,linetype = 1) + theme_bw() + col +
+  labs(fill=str_wrap("Log2-fold abundance change over baseline",width=12),
+       caption=paste("Zero-values set to 1/2 lim detection, or",as.character(lim_detect/2)))+
+  ggtitle("Change in taxa abundance (feces)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+            legend.title = element_text(size = 7),
+        plot.caption = element_text(hjust = 0, face= "italic"),
+        plot.title.position = "plot",
+        plot.caption.position =  "plot")
+  return(p)
+}
+
+# Function to save heatmaps as pdf.
+# Calls translocated_heatmap() defined above.
+# Takes in the normalised dataset, the change you want ("all", "up", or "down"), and the Timepoint groups as they appear in the metadata (eg. "6h post-BP")
+save_heatmap <- function(dataset,change="all",group="6h post-BP"){
+  p <- translocated_heatmap(dataset,change,group)
+  n <- paste("translocated_heatmap_feces_6h_",change,".pdf",sep="")
+  print(n)
+  ggsave(n,width=3,height=8)
+}
+```
+
+# Producing graphs for Ellie.
+```{r}
+# Save heatmaps for the L6 (genus level), for up and down-regulated taxa at 6h post-BP.
+save_heatmap(translocated_L6_norm,change="up",group=c("6h post-BP"))
+save_heatmap(translocated_L6_norm,change="down",group=c("6h post-BP"))
+```
+
