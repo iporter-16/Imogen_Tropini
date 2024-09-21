@@ -9,6 +9,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(ggplot2)
+library(tidyverse)
+
 #Plot setup
 bp_fill<- c("#FEEB8A", "#A6D8F2")
 bp_col<- c("#FFC600", "#004687")
@@ -67,7 +69,7 @@ for (d in days){
 
 ```
 
-Salmonella translocation in the tissues after 6 days of PEG
+Salmonella translocation in the tissues after 6 days of PEG + infection
 ```{r}
 tissue_long<- read_csv(data) %>% 
   pivot_longer(cols = c("mLN", "Spleen", "Liver","Cecum"), names_to="Tissue", values_to = "tissue_CFU")%>%
@@ -112,4 +114,30 @@ for (t in tissues){
 # ggsave("Tissue_Colonization.pdf", tissue, device = "pdf", height = 4.90, width = 6)
 
 
+```
+
+Weight loss after infection
+```{r}
+data <- "weight_loss_data_F0_salmonella_sac.csv"
+weight <- read_csv(data) %>%
+    mutate(Treatment = factor(Treatment, levels = c("PEG", "MB-"))) 
+  
+weight_summ <- weight %>%
+  group_by(Treatment,Day) %>% 
+  summarise(mean=mean(Percent_Change), stdev=sd(Percent_Change))
+weight_summ
+
+weigh_plot <- weight_summ %>% 
+  ggplot(aes(x=Day,y=mean,group=Treatment,color=Treatment)) +
+  theme_bw() +
+  scale_fill_manual(values = bp_fill) +  # Fill color for the violins
+  scale_color_manual(values = bp_col) +  # Fill color for the points
+  geom_ribbon(aes(y = mean, ymin = mean-stdev, ymax = mean+stdev, fill = Treatment), 
+              alpha = .3, color=NA) +
+  geom_point() + geom_line() +
+  ggtitle("Mouse % weight change following Salmonella infection") +
+  labs(x="Day",y="Mean % weight change")
+
+weigh_plot
+ggsave("weight_change.pdf",weigh_plot, device = "pdf", height = 4.90, width = 6)
 ```
