@@ -142,7 +142,7 @@ g <- ggplot(count_substrate, aes(y = Substrates, x = Genome, fill = n)) +
   facet_grid(~Species, scales = "free_x", space = "free_x") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 g
-# ggsave("heatmap_GH_substrate.pdf",scale=2)
+ggsave("heatmap_GH_substrate.pdf",scale=2)
 
 ```
 
@@ -165,7 +165,7 @@ g <- ggplot(count_source, aes(y = Source, x = Genome, fill = n)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 g
-# ggsave("heatmap_GH_sources.pdf",scale=2)
+ggsave("heatmap_GH_sources.pdf",scale=2)
 write.csv(count_substrate,"substrate_counts.csv",row.names = FALSE)
 write.csv(count_source,"source_counts.csv",row.names = FALSE)
 write.csv(all_content_substrate,"substrate_counts_detailed.csv",row.names = FALSE)
