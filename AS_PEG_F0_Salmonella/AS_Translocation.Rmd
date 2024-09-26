@@ -12,8 +12,8 @@ library(ggplot2)
 library(tidyverse)
 
 #Plot setup
-bp_fill<- c("#FEEB8A", "#A6D8F2")
-bp_col<- c("#FFC600", "#004687")
+peg_fill<- c("#bb8adc", "#f2f18f")
+peg_col<- c("#7614b9", "#e4e21e")
 point = 2
 axis_font_size = 12
 axis_title_size = 14
@@ -41,8 +41,8 @@ feces <- feces_long %>%
   ) +
   geom_hline(yintercept = 100, colour = "red", linetype = "dashed") +
   theme_bw() +
-  scale_fill_manual(values = bp_fill) +  # Fill color for the violins
-  scale_color_manual(values = bp_col) +  # Fill color for the points
+  scale_fill_manual(values = peg_fill) +  # Fill color for the violins
+  scale_color_manual(values = peg_col) +  # Fill color for the points
   scale_y_log10(limits = c(1e0, 1e8), labels = scales::trans_format(log10, scales::math_format(10^.x))) +
   theme(
     panel.border = element_rect(color = "black"),
@@ -56,6 +56,32 @@ feces <- feces_long %>%
 
 feces
 
+feces_box <- ggplot(data = feces_long, aes(x = Treatment, y = feces_CFU, 
+                                             fill = Treatment,color=Treatment)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width=0.2)+
+  labs(x = "", y = "Salmonella Counts in Feces (CFU/mL)",fill="",color="") +
+  theme_bw() + 
+  facet_grid(~Day)+
+  scale_fill_manual(values = peg_fill) +  # Fill color for the violins
+  scale_color_manual(values = peg_col) +  # Fill color for the points
+  scale_y_log10(limits = c(1e0, 1e7), labels = scales::trans_format(log10, scales::math_format(10^.x))) +
+theme(
+    panel.border = element_rect(color = "black"),
+    panel.grid = element_line(colour = "white"),
+    axis.title = element_text(size = axis_title_size, colour = "black"), 
+    axis.text = element_text(size = axis_font_size, colour = "black"),
+    strip.text = element_text(size = axis_title_size, colour = 'black'),
+    # legend.position = c(0.88,0.90),
+    strip.text.x = element_text(size = axis_title_size, colour = 'black'),  
+    strip.background = element_blank(),  # Remove background
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  ) +
+    geom_hline(yintercept = 100, colour = "red", linetype = "dashed") +
+  ggtitle("Salmonella in feces of MB- or conventional PEG+")
+feces_box
+
 # Wilcoxon/Mann-Whitney test (two groups, non-parametric as not-normal)
 days <- unique(feces_long$Day)
 for (d in days){
@@ -65,12 +91,14 @@ for (d in days){
   print(paste("Wilcoxon/MW p-value for day",d,"is",wmn_p,sep=" "))
 }
 
-# ggsave("Feces_Colonization.pdf", feces, device = "pdf", height = 4.90, width = 6)
+# ggsave("Feces_Colonization_box.pdf", feces_box, device = "pdf", height = 4.90, width = 6)
 
 ```
 
 Salmonella translocation in the tissues after 6 days of PEG + infection
 ```{r}
+data <- "PEG_F0_Salmonella_Counts.csv"
+
 tissue_long<- read_csv(data) %>% 
   pivot_longer(cols = c("mLN", "Spleen", "Liver","Cecum"), names_to="Tissue", values_to = "tissue_CFU")%>%
   mutate(Treatment = factor(Treatment, levels = c("PEG", "MB-"))) %>% 
@@ -85,8 +113,8 @@ tissue <- ggplot() +
   theme_bw() + 
   facet_grid(~Tissue)+
   theme_bw() +
-  scale_fill_manual(values = bp_fill) +  # Fill color for the violins
-  scale_color_manual(values = bp_col) +  # Fill color for the points
+  scale_fill_manual(values = peg_fill) +  # Fill color for the violins
+  scale_color_manual(values = peg_col) +  # Fill color for the points
   scale_y_log10(limits = c(1e0, 1e7), labels = scales::trans_format(log10, scales::math_format(10^.x))) +
 theme(
     panel.border = element_rect(color = "black"),
@@ -101,7 +129,33 @@ theme(
     axis.ticks.x = element_blank()
   ) +
   ggtitle("Salmonella translocation at 6 days post-infection")
+
 tissue
+
+tissue_box <- ggplot(data = tissue_long, 
+                     aes(x = Treatment, y = tissue_CFU, fill = Treatment,color=Treatment)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width=0.2)+
+  labs(x = "", y = "Salmonella Counts in Tissues (CFU/g)",fill="",color="") +
+  theme_bw() + 
+  facet_grid(~Tissue)+
+  scale_fill_manual(values = peg_fill) +  # Fill color for the violins
+  scale_color_manual(values = peg_col) +  # Fill color for the points
+  scale_y_log10(limits = c(1e0, 1e7), labels = scales::trans_format(log10, scales::math_format(10^.x))) +
+theme(
+    panel.border = element_rect(color = "black"),
+    panel.grid = element_line(colour = "white"),
+    axis.title = element_text(size = axis_title_size, colour = "black"), 
+    axis.text = element_text(size = axis_font_size, colour = "black"),
+    strip.text = element_text(size = axis_title_size, colour = 'black'),
+    # legend.position = c(0.88,0.90),
+    strip.text.x = element_text(size = axis_title_size, colour = 'black'),  
+    strip.background = element_blank(),  # Remove background
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  ) +
+  ggtitle("Salmonella translocation at 6 days post-infection")
+tissue_box
 
 tissues <- unique(tissue_long$Tissue)
 for (t in tissues){
@@ -111,14 +165,14 @@ for (t in tissues){
   print(paste("Wilcoxon/MW p-value for tissue",t,"is",wmn_p,sep=" "))
 }
 
-# ggsave("Tissue_Colonization.pdf", tissue, device = "pdf", height = 4.90, width = 6)
-
-
+# ggsave("Tissue_Colonization_box.pdf", tissue_box, device = "pdf", height = 4.90, width = 6)
 ```
 
 Weight loss after infection
 ```{r}
 data <- "weight_loss_data_F0_salmonella_sac.csv"
+peg_col2<- c("#7614b9", "#f6f30c")
+
 weight <- read_csv(data) %>%
     mutate(Treatment = factor(Treatment, levels = c("PEG", "MB-"))) 
   
@@ -128,16 +182,69 @@ weight_summ <- weight %>%
 weight_summ
 
 weigh_plot <- weight_summ %>% 
-  ggplot(aes(x=Day,y=mean,group=Treatment,color=Treatment)) +
+  ggplot(aes(x=Day,y=mean,group=Treatment,color=Treatment,fill=Treatment)) +
   theme_bw() +
-  scale_fill_manual(values = bp_fill) +  # Fill color for the violins
-  scale_color_manual(values = bp_col) +  # Fill color for the points
+  scale_fill_manual(values = peg_fill) +  # Fill color for the violins
+  scale_color_manual(values = peg_col2) +  # Fill color for the points
   geom_ribbon(aes(y = mean, ymin = mean-stdev, ymax = mean+stdev, fill = Treatment), 
-              alpha = .3, color=NA) +
-  geom_point() + geom_line() +
+              alpha = .6, color=NA) +
+  geom_line() +
+  geom_point(color="black",pch=21) + 
   ggtitle("Mouse % weight change following Salmonella infection") +
   labs(x="Day",y="Mean % weight change")
 
 weigh_plot
-ggsave("weight_change.pdf",weigh_plot, device = "pdf", height = 4.90, width = 6)
+# ggsave("weight_change.png",weigh_plot, device = "png", height = 4.90, width = 6)
+```
+
+Bar plots (ew???)
+```{r}
+#FECES#################
+feces_sum <- feces_long %>%
+  group_by(Day,Treatment) %>% 
+  summarise(mean=mean(feces_CFU,na.rm=TRUE), 
+            stdev =sd(feces_CFU,na.rm=TRUE),
+            sterr=(sd(feces_CFU)/sqrt(n())))
+
+feces_bar <- feces_sum %>%
+  ggplot(aes(x=Treatment,y=mean,fill=Treatment,colour=Treatment))+
+  geom_col(position="dodge",alpha=0.7) + 
+  facet_grid(~Day)+
+  geom_jitter(data = feces_long, 
+              aes(x=Treatment,y=feces_CFU,fill=Treatment,colour=Treatment),
+              width=0.2) +
+  theme_classic() +
+  scale_fill_manual(values = peg_fill) +  # Fill color for the violins
+  scale_color_manual(values = peg_col) +  # Fill color for the points
+  geom_errorbar(aes(ymin= mean - sterr,ymax= mean + sterr, colour=Treatment, width=0.8)) +
+  scale_y_log10(limits = c(1e0, 1e8), labels = scales::trans_format(log10, scales::math_format(10^.x))) +
+  labs(x="",y="Salmonella Counts in Feces (CFU/mL)")
+
+feces_bar
+ggsave("Feces_Colonization_Bar.png",feces_bar, device = "png", height = 4.90, width = 6)
+
+
+#TISSUE#################
+tissue_sum <- tissue_long %>%
+  group_by(Tissue,Treatment) %>% 
+  summarise(mean=mean(tissue_CFU,na.rm=TRUE), 
+            stdev =sd(tissue_CFU,na.rm=TRUE),
+            sterr=(sd(tissue_CFU,na.rm=TRUE)/sqrt(n())))
+
+tissue_bar <- tissue_sum %>%
+  ggplot(aes(x=Treatment,y=mean,fill=Treatment,colour=Treatment))+
+  geom_col(alpha=0.7) +
+  geom_jitter(data = tissue_long, 
+              aes(x=Treatment,y=tissue_CFU,fill=Treatment,colour=Treatment),
+              width=0.2) +
+  geom_errorbar(aes(ymin= mean - sterr,ymax= mean + sterr, colour=Treatment, width=0.8)) +
+  facet_grid(~Tissue)+
+  theme_classic() +
+  scale_fill_manual(values = peg_fill) +  # Fill color for the violins
+  scale_color_manual(values = peg_col) +  # Fill color for the points
+  scale_y_log10(limits = c(1e0, 1e7), labels = scales::trans_format(log10, scales::math_format(10^.x))) +
+  labs(x="",y="Salmonella Counts in Tissues (CFU/g)")
+
+tissue_bar
+ggsave("Tissue_Colonization_Bar.png",tissue_bar, device = "png", height = 4.90, width = 6)
 ```
