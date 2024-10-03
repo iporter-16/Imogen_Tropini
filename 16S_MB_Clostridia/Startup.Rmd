@@ -1,0 +1,396 @@
+---
+title: "16S-processing"
+author: "IP"
+date: "2024-07-10"
+output: html_document
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(phyloseq)
+library(ape)
+library(tidyverse)
+library(picante)
+library(ggplot2)
+library(ggpubr)
+library(vegan)
+library(DESeq2)
+library(microViz)
+```
+
+## Make phyloseq object
+```{r,echo=FALSE}
+## import metadata and compress as needed
+metafp <- "sample_manifest.txt"
+meta <- read_delim(metafp, delim="\t") 
+SAMP <- as.data.frame(meta[,-1])
+rownames(SAMP) <- meta$`#SampleID`
+SAMP <- SAMP %>% sample_data()
+
+## import OTUs and make matrix
+otufp <- "feature-table.txt"
+otu <- read_delim(file = otufp, delim="\t", skip=1)
+otu_mat <- as.matrix(otu[,-1]) 
+rownames(otu_mat) <- otu$`#OTU ID`
+OTU <- otu_table(otu_mat, taxa_are_rows = TRUE) 
+class(OTU) 
+
+## import taxa and make matrix
+taxfp <- "2a_feature-table-with-taxonomy.tsv"
+tax <- read_delim(taxfp, delim="\t", skip=1) 
+tax_matrix <- tax %>% select(taxonomy) %>%
+  separate(col=taxonomy, sep="; ",
+	into=c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species")) %>%  
+  as.matrix()
+rownames(tax_matrix) <- tax$`#OTU ID`
+TAX <- tax_matrix %>% tax_table()
+
+## Now make tax_matrix into a data frame with OTU ID information
+tax_matrix <- tax_matrix %>% as.data.frame()
+tax_matrix$Genus <- gsub("g__", "", tax_matrix$Genus)
+tax_matrix$Family <- gsub("f__", "", tax_matrix$Family)
+tax_matrix$'#OTU ID' <- tax$`#OTU ID`
+
+## Create phylogenetic tree
+phylotreefp <- "tree.nwk"
+phylotree <- read.tree(phylotreefp)
+
+## Create phyloseq object and filter out non-bacterial sequences
+object <- phyloseq(OTU,SAMP,TAX,phylotree)
+```
+
+## Filter data (rarefy, etc.) and save phyloseq object.
+```{r}
+object_filt <- subset_taxa(object, Domain == "d__Bacteria" & Class!="c__Chloroplast" & Family !="f__Mitochondria")
+object_filt_samples <- prune_samples(sample_sums(object_filt)>100, object_filt)
+
+## Rarefy
+# rarecurve(t(as.data.frame(otu_table(object_filt_samples))), cex=0.1)
+phyloseq_object_final <- rarefy_even_depth(object_filt_samples, rngseed = 1, sample.size =50000)
+phyloseq_object_final <- subset_samples(phyloseq_object_final, !sample_names(phyloseq_object_final) %in% c("MBClos-MBClos-inoc", "MBClos-Clos-inoc"))
+
+## Save
+save(object_filt_samples,file="object_filt_samples.RData")
+save(phyloseq_object_final,file="phyloseq_object_final.RData")
+
+```
+
+## Perform alpha diversity analyses
+```{r}
+load("phyloseq_object_final.RData")
+
+## Calculate Alpha diversity
+alpha_div_data <- estimate_richness(phyloseq_object_final, measures = c("Observed", "Chao1", "Shannon")) %>% as.data.frame()
+rownames(alpha_div_data) <- gsub("\\.", "-", rownames(alpha_div_data))
+alpha_div_data$Sample <- rownames(alpha_div_data) 
+
+## Factor metadata into our interests
+meta_subset <- SAMP[,c("Treatment","day")] 
+meta_subset$Sample <- rownames(SAMP)
+meta_subset <- meta_subset[!is.na(meta_subset$Treatment),]
+meta_subset$Treatment <- meta_subset$Treatment %>% factor( levels=c("Mb_only","MB_Clostridia","Clostridia_only")) 
+meta_subset$day <- factor(meta_subset$day,levels=c("1","2","3","4","6","7","14","21"))
+
+alpha_div_data <- alpha_div_data %>%
+  left_join(meta_subset, by="Sample") %>% drop_na() 
+
+alpha_div_data_long <- pivot_longer(alpha_div_data,
+                                    cols = c(Observed, Chao1, Shannon),
+                                    names_to = "Metric",
+                                    values_to = "Value")
+
+## Plot faceted by treatment and diversity index
+ggplot(alpha_div_data_long, aes(x = day, y = Value, fill = Treatment)) +
+  geom_boxplot(alpha = 0.3) +
+  facet_grid(cols = vars(Treatment), rows = vars(Metric),scales = "free_y") +  # facet by both Treatment and Metric
+  labs(x = "Day", y = "Diversity Metric") + 
+  theme_linedraw()
+
+## Plot just at day 21 with statistical comparisons (t-test)
+alpha_div_data_long %>% filter(day==21) %>%
+  ggplot(aes(x = Treatment, y = Value, fill = Treatment)) +
+  geom_boxplot(alpha = 0.3) +
+  scale_y_continuous(expand = expansion(mult = .2)) +
+  facet_grid(rows = vars(Metric),scales = "free_y", switch="y") +  
+  labs(x = "Treatment", y = "Diversity Metric") + 
+  ggtitle("Alpha diversity after 21 days") +
+  theme_linedraw() + 
+  stat_compare_means(aes(group = Treatment), method = "t.test", 
+                     comparisons = list(c("Mb_only", "MB_Clostridia"), c("Mb_only", 
+                                    "Clostridia_only"), c("MB_Clostridia", "Clostridia_only")), 
+                     label = "p.signif",step.increase = 0.2) 
+
+alpha_div_data_long %>% filter(day==21) %>%
+  ggplot(aes(x = Treatment, y = Value, fill = Treatment)) +
+  geom_boxplot(alpha = 0.3) +
+  scale_y_continuous(expand = expansion(mult = .2)) +
+  facet_grid(rows = vars(Metric),scales = "free_y", switch="y") +  
+  labs(x = "Treatment", y = "Diversity Metric") + 
+  ggtitle("Alpha diversity after 21 days") +
+  theme_linedraw() +
+  geom_pwc(method="t_test", label="p.signif",hide.ns=TRUE)
+
+```
+## Perform beta diversity analyses
+```{r}
+# Goal: ß-diversity comparing between treatments at 1, 7, 14, and 21 days.
+## Use phyloseq to calculate distance matrix
+dm_weighted_unifrac <- UniFrac(phyloseq_object_final, weighted=TRUE)#weighted unifrac
+dm_unweighted_unifrac <- UniFrac(phyloseq_object_final, weighted=FALSE)#unweighted unifrac
+dm_bray <- vegdist(t(otu_table(phyloseq_object_final)), method="bray")#bray-curtis
+dm_jaccard <- vegdist(t(otu_table(phyloseq_object_final)), method="jaccard")#jaccard
+
+## For the timestamps given produce PCA plot coloured by Treatment
+dayz <- c(1,7,14,21)
+for (d in dayz){
+  phyloseq_byday <- subset_samples(phyloseq_object_final,day==d)
+  sample_data(phyloseq_byday)$Treatment <- factor(sample_data(phyloseq_byday)$Treatment, 
+                                                     levels = c("Mb_only", "MB_Clostridia", "Clostridia_only"))
+  ord.weighted_unifrac <- ordinate(phyloseq_byday, method="PCoA", distance="unifrac", weighted=TRUE)
+  gg.weighted_unifrac <- plot_ordination(phyloseq_byday,
+                                         ord.weighted_unifrac,color="Treatment") +
+    labs(col="Treatment")+ stat_ellipse(type = "norm") +
+    ggtitle(paste("Beta diversity",d,"days post treatment",sep=" ")) +
+    theme_bw()
+  print(gg.weighted_unifrac)
+}
+```
+## #FUNCTION subset_my_phyloseq
+###Takes in a phyloseq object and list of genera, returns an abundance table filtered.
+```{r}
+#Requires tax_matrix and otu_table in global environment
+#Subsets by genus name
+subset_my_phyloseq_genus <- function(physeq_object,genera){
+  
+  genus_names <- data.frame("Genus"=tax_matrix$Genus)
+  rownames(genus_names) <- rownames(tax_matrix)
+  genus_abundance <- tax_glom(physeq_object, taxrank = "Genus") %>%
+    transform_sample_counts(function(x) x / sum(x)) 
+  genus_abundance_table <- as.data.frame(otu_table(genus_abundance))
+  rownames(genus_abundance_table) <- make.unique(genus_names[rownames(genus_abundance_table), 
+                                                             "Genus"])
+  ## Filter to species of interest
+  filtered_abundance_table <- filter(genus_abundance_table, row.names(genus_abundance_table) %in%
+                                       genera)
+  ## Rework into usable data frame with metadata
+  abundance_table_final <- filtered_abundance_table %>% t() %>% as.data.frame() %>%
+    merge(meta_subset, by="row.names", all=FALSE)
+  rownames(abundance_table_final) <- abundance_table_final[,1]
+  abundance_table_final <- abundance_table_final[, -1] %>% 
+    gather(Genus, Abundance, -Treatment, -day) %>%
+    subset(Genus!="Sample")
+  abundance_table_final$Abundance <- as.numeric(abundance_table_final$Abundance)
+  return(abundance_table_final)
+}
+
+subset_my_phyloseq_fam <- function(physeq_object,families){
+  fam_names <- data.frame("Family"=tax_matrix$Family)
+  rownames(fam_names) <- rownames(tax_matrix)
+  fam_abundance <- tax_glom(physeq_object, taxrank = "Family") %>%
+    transform_sample_counts(function(x) x / sum(x)) 
+  fam_abundance_table <- as.data.frame(otu_table(fam_abundance))
+  rownames(fam_abundance_table) <- make.unique(fam_names[rownames(fam_abundance_table), 
+                                                             "Family"])
+  ## Filter to species of interest
+  filtered_abundance_table <- filter(fam_abundance_table, row.names(fam_abundance_table) %in%
+                                       families)
+  ## Rework into usable data frame with metadata
+  abundance_table_final <- filtered_abundance_table %>% t() %>% as.data.frame() %>%
+    merge(meta_subset, by="row.names", all=FALSE)
+  rownames(abundance_table_final) <- abundance_table_final[,1]
+  abundance_table_final <- abundance_table_final[, -1] %>% 
+    gather(Family, Abundance, -Treatment, -day) %>%
+    subset(Family!="Sample")
+  abundance_table_final$Abundance <- as.numeric(abundance_table_final$Abundance)
+  return(abundance_table_final)
+}
+```
+## Species-specific longitudinal analyses within treatments over time
+## Genera lost in MB- mice
+```{r}
+# Goal: look at the following list of genera (lost in MB- mice) and count over time
+## Genera producing butyrate, of interest
+genera_of_interest <- c("Acetatifactor", "Anaerofustis", "Butyricicoccus", "Clostridia_UCG-014", "Lachnospiraceae_NK4B4_group", "Family_XIII_AD3011_group", "DNF00809", "Clostridia_vadinBB60_group", "Marvinbryantia", "Roseburia")
+
+genera_of_interest <- TAX[TAX[, "Class"] == "c__Clostridia",]
+genera_of_interest <- as.list(unique(genera_of_interest[, "Genus"]))
+genera_of_interest <- gsub("g__", "", genera_of_interest) %>% as.list()
+
+fam_of_interest <- TAX[TAX[, "Class"] == "c__Clostridia",]
+fam_of_interest <- as.list(unique(fam_of_interest[, "Family"]))
+fam_of_interest <- gsub("f__", "", fam_of_interest) %>% as.list()
+
+## Make big plot with all days
+# g <- ggplot(abundance_table_final, aes(x = factor(day), y = Abundance, fill = Treatment)) +
+#   geom_boxplot() +
+#   facet_grid(rows=vars(Genus),cols=vars(Treatment), scales = "free_y", switch="y") +
+#   labs(x = "Day", y = "Relative abundance", title = "Relative Abundance of Genera by Treatment") +
+#   theme_linedraw()
+
+##PLOT 2 - Relative abundance of genera of interest (butyrates)
+days=c(1,7,14,21)
+for (d in days){
+  temptitle <- paste("Relative abundance of genera on day",d)
+  tempsave <- paste("plots/plot2/clostrid_abundance_day",d,".png",sep="")
+  print(tempsave)
+  g <- subset_my_phyloseq_genus(phyloseq_object_final,genera_of_interest) %>% filter(day==d) %>%
+  ggplot(aes(x = Treatment, y = Abundance, fill = Treatment)) +
+  geom_boxplot() +
+    facet_wrap(vars(Genus), scales = "free_y") +
+    labs(x = "", y = "Relative abundance", title = temptitle) +
+    theme_linedraw() + 
+    scale_y_continuous(expand = expansion(mult = .3)) +
+    geom_pwc(method="t_test", label="p.signif",hide.ns=TRUE)+
+    theme(axis.text.x = element_blank(),
+        legend.position = "bottom") +
+    expand_limits(y = 0)
+  ggsave(filename = tempsave,width=12,height=7)
+}
+
+##PLOT3 - Repeated but for family level
+days=c(1,7,14,21)
+for (d in days){
+  temptitle <- paste("Relative abundance of families on day",d)
+  tempsave <- paste("plots/plot3/clostrid_fam_abundance_day",d,".png",sep="")
+  print(tempsave)
+  g <- subset_my_phyloseq_fam(phyloseq_object_final,fam_of_interest) %>% filter(day==d) %>%
+  ggplot(aes(x = Treatment, y = Abundance, fill = Treatment)) +
+  geom_boxplot() +
+    facet_wrap(vars(Family), scales = "free_y") +
+    labs(x = "", y = "Relative abundance", title = temptitle) +
+    theme_linedraw() + 
+    scale_y_continuous(expand = expansion(mult = .3)) +
+    geom_pwc(method="t_test", label="p.signif",hide.ns=TRUE)+
+    theme(axis.text.x = element_blank(),
+        legend.position = "bottom") +
+    expand_limits(y = 0)
+  ggsave(filename = tempsave,width=12,height=7)
+}
+```
+
+## Species-specific longitudinal analyses within treatments over time
+## Look specifically at Lachnospiraceae family (PLOT1)
+```{r}
+# Goal: look at the following list of genera (genera in lachnospiraceae) and count over time
+
+## Subset the phyloseq object to just include these genera
+genera_of_interest <- TAX[TAX[, "Family"] == "f__Lachnospiraceae",]
+genera_of_interest <- as.list(unique(genera_of_interest[, "Genus"]))
+genera_of_interest <- gsub("g__", "", genera_of_interest) %>% as.list()
+
+## Make big plot
+g <- ggplot(subset_my_phyloseq(phyloseq_object_final,genera_of_interest), aes(x = factor(day), y = Abundance, fill = Treatment)) +
+  geom_boxplot() +
+  facet_grid(rows=vars(Genus),cols=vars(Treatment), scales = "free_y", switch="y") +
+  labs(x = "Day", y = "Relative abundance", title = "Relative Abundance of Lachnospiraceae Genera by Treatment") +
+  theme_linedraw()
+g
+
+## PLOT1: facet by day and genera on x.
+days=c(1,7,14)
+for (d in days){
+  temptitle <- paste("Relative abundance of Lachnospiraceae on day",d)
+  tempsave <- paste("plots/plot1/lachnospiraceae_abundance_day",d,".png",sep="")
+  print(tempsave)
+  g <- abundance_table_final%>% filter(day==d) %>%
+  ggplot(aes(x = Treatment, y = Abundance, fill = Treatment)) +
+  geom_boxplot() +
+    facet_wrap(vars(Genus), scales = "free_y") +
+    labs(x = "", y = "Relative abundance", title = temptitle) +
+    theme_linedraw() + 
+    scale_y_continuous(expand = expansion(mult = .3)) +
+    geom_pwc(method="t_test", label="p.signif",hide.ns=TRUE)+
+    theme(axis.text.x = element_blank(),
+        legend.position = "bottom") +
+    expand_limits(y = 0)
+  print(g)
+  ggsave(filename = tempsave,width=12,height=7)
+}
+```
+
+
+#NOTES & TRASH
+```{r}   
+# ## Make DESEq object and add taxa information
+# deseq_object <- phyloseq_to_deseq2(phyloseq_object_final, ~Treatment) %>% DESeq()
+# deseq_results <- deseq_object %>% results(tidy=TRUE)
+# colnames(deseq_results)[1] <- "#OTU ID"
+# deseq_results_taxa <- inner_join(tax_matrix,deseq_results, by = "#OTU ID" )
+# 
+# ## Filter DESEq for significance p<0.01 and large changes.
+# deseq_results_sig <-  deseq_results_taxa %>%
+#   filter( padj<0.01 & abs(log2FoldChange)>2)
+# deseq_results_sig <- deseq_results_sig[order(deseq_results_sig$log2FoldChange),]
+
+#Make the plot
+# ggplot(data = deseq_results_sig, aes(y = reorder(Genus, -(as.numeric(log2FoldChange))), x = log2FoldChange, fill = pvalue))+
+# #   geom_col()
+# 
+# ## Count hits
+# upregulated_count <- sum(deseq_results_sig$log2FoldChange > 0)
+# downregulated_count <- sum(deseq_results_sig$log2FoldChange < 0)
+# cat("Number of upregulated ASVs:", upregulated_count, "\n")
+# cat("Number of downregulated ASVs:", downregulated_count, "\n")
+
+//////
+  
+  # 
+# ## Calculate all relative abundances
+# genus_abundance <- tax_glom(phyloseq_object_final, taxrank = "Genus") %>%
+#   transform_sample_counts(function(x) x / sum(x)) 
+# genus_abundance_table <- as.data.frame(otu_table(genus_abundance))
+# rownames(genus_abundance_table) <- make.unique(genus_names[rownames(genus_abundance_table), "Genus"])
+# 
+# ## Filter to species of interest
+# filtered_abundance_table <- filter(genus_abundance_table, row.names(genus_abundance_table) %in% genera_of_interest)
+# 
+# ## Rework into usable data frame with metadata
+# abundance_table_final <- filtered_abundance_table %>% t() %>% as.data.frame() %>%
+#   merge(meta_subset, by="row.names", all=FALSE)
+# rownames(abundance_table_final) <- abundance_table_final[,1]
+# abundance_table_final <- abundance_table_final[, -1] %>% 
+#   gather(Genus, Abundance, -Treatment, -day) %>%
+#   subset(Genus!="Sample")
+# abundance_table_final$Abundance <- as.numeric(abundance_table_final$Abundance)
+
+subset_my_phyloseq_taxa <- function(physeq_object, taxa_list, level) {
+  # Extract the taxonomy table from the phyloseq object
+  tax_matrix <- tax_table(physeq_object)
+  
+  # Create a data frame of the taxonomic level of interest
+  level_names <- data.frame("Taxa" = as.character(tax_matrix[, level]))
+  rownames(level_names) <- rownames(tax_matrix)
+  
+  # Aggregate the OTU table at the specified taxonomic level
+  taxa_abundance <- tax_glom(physeq_object, taxrank = level) %>%
+    transform_sample_counts(function(x) x / sum(x))
+  
+  # Convert the aggregated OTU table to a data frame
+  taxa_abundance_table <- as.data.frame(otu_table(taxa_abundance))
+  rownames(taxa_abundance_table) <- make.unique(as.character(level_names[rownames(taxa_abundance_table), "Taxa"]))
+  
+  # Filter the abundance table to include only the taxa of interest
+  filtered_abundance_table <- taxa_abundance_table %>% filter(row.names(.) %in% taxa_list)
+  
+  # Rework the filtered abundance table into a usable data frame with metadata
+  abundance_table_final <- filtered_abundance_table %>% 
+    t() %>% 
+    as.data.frame() %>%
+    merge(meta_subset, by = "row.names", all = FALSE)
+  
+  # Clean up the final data frame
+  rownames(abundance_table_final) <- abundance_table_final[, 1]
+  abundance_table_final <- abundance_table_final[, -1] %>%
+    gather(Taxa, Abundance, -Treatment, -day) %>%
+    subset(Taxa != "Sample")
+  
+  abundance_table_final$Abundance <- as.numeric(abundance_table_final$Abundance)
+  return(abundance_table_final)
+}
+```   
+
+
+
+
+
+
