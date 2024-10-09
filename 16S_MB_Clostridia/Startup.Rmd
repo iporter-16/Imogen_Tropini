@@ -19,6 +19,7 @@ library(microViz)
 ```
 
 ## Make phyloseq object
+
 ```{r,echo=FALSE}
 ## import metadata and compress as needed
 metafp <- "sample_manifest.txt"
@@ -41,7 +42,10 @@ tax <- read_delim(taxfp, delim="\t", skip=1)
 tax_matrix <- tax %>% select(taxonomy) %>%
   separate(col=taxonomy, sep="; ",
 	into=c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species")) %>%  
-  as.matrix()
+  mutate(Kingdom=NA) %>%
+  select(Domain, Kingdom, Phylum, Class, Order, Family, Genus) %>%
+  as.matrix() 
+
 rownames(tax_matrix) <- tax$`#OTU ID`
 TAX <- tax_matrix %>% tax_table()
 
@@ -50,6 +54,9 @@ tax_matrix <- tax_matrix %>% as.data.frame()
 tax_matrix$Genus <- gsub("g__", "", tax_matrix$Genus)
 tax_matrix$Family <- gsub("f__", "", tax_matrix$Family)
 tax_matrix$'#OTU ID' <- tax$`#OTU ID`
+
+save(tax_matrix,file="tax_matrix.RData")
+
 
 ## Create phylogenetic tree
 phylotreefp <- "tree.nwk"
@@ -60,8 +67,9 @@ object <- phyloseq(OTU,SAMP,TAX,phylotree)
 ```
 
 ## Filter data (rarefy, etc.) and save phyloseq object.
+
 ```{r}
-object_filt <- subset_taxa(object, Domain == "d__Bacteria" & Class!="c__Chloroplast" & Family !="f__Mitochondria")
+object_filt <- subset_taxa(object, Domain == "d__Bacteria" & Order!="o__Chloroplast" & Family !="f__Mitochondria")
 object_filt_samples <- prune_samples(sample_sums(object_filt)>100, object_filt)
 
 ## Rarefy
@@ -76,6 +84,7 @@ save(phyloseq_object_final,file="phyloseq_object_final.RData")
 ```
 
 ## Perform alpha diversity analyses
+
 ```{r}
 load("phyloseq_object_final.RData")
 
@@ -131,7 +140,9 @@ alpha_div_data_long %>% filter(day==21) %>%
   geom_pwc(method="t_test", label="p.signif",hide.ns=TRUE)
 
 ```
+
 ## Perform beta diversity analyses
+
 ```{r}
 # Goal: ß-diversity comparing between treatments at 1, 7, 14, and 21 days.
 ## Use phyloseq to calculate distance matrix
@@ -155,8 +166,11 @@ for (d in dayz){
   print(gg.weighted_unifrac)
 }
 ```
+
 ## #FUNCTION subset_my_phyloseq
+
 ###Takes in a phyloseq object and list of genera, returns an abundance table filtered.
+
 ```{r}
 #Requires tax_matrix and otu_table in global environment
 #Subsets by genus name
@@ -205,8 +219,11 @@ subset_my_phyloseq_fam <- function(physeq_object,families){
   return(abundance_table_final)
 }
 ```
+
 ## Species-specific longitudinal analyses within treatments over time
+
 ## Genera lost in MB- mice
+
 ```{r}
 # Goal: look at the following list of genera (lost in MB- mice) and count over time
 ## Genera producing butyrate, of interest
@@ -269,7 +286,9 @@ for (d in days){
 ```
 
 ## Species-specific longitudinal analyses within treatments over time
+
 ## Look specifically at Lachnospiraceae family (PLOT1)
+
 ```{r}
 # Goal: look at the following list of genera (genera in lachnospiraceae) and count over time
 
@@ -308,9 +327,9 @@ for (d in days){
 }
 ```
 
-
 #NOTES & TRASH
-```{r}   
+
+```{r}
 # ## Make DESEq object and add taxa information
 # deseq_object <- phyloseq_to_deseq2(phyloseq_object_final, ~Treatment) %>% DESeq()
 # deseq_results <- deseq_object %>% results(tidy=TRUE)
@@ -387,10 +406,4 @@ subset_my_phyloseq_taxa <- function(physeq_object, taxa_list, level) {
   abundance_table_final$Abundance <- as.numeric(abundance_table_final$Abundance)
   return(abundance_table_final)
 }
-```   
-
-
-
-
-
-
+```

@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 load("phyloseq_object_final.RData")
+load("tax_matrix.RData") 
 library(phyloseq)
 library(ape)
 library(tidyverse)
@@ -16,13 +17,15 @@ library(ggpubr)
 library(vegan)
 library(DESeq2)
 library(microViz)
+library(scran)
+
 ```
 
 ## Main function
 ```{r }
 ## !!!  Start by setting filter variables such as day and treatment groups
 v_day <- c(21)
-v_treat <- c("MB_Clostridia","Mb_only")
+v_treat <- c("MB_Clostridia","Clostridia_only")
 v_phyloseq_object_final <- phyloseq_object_final 
   
 ### FUNCTION main
@@ -31,12 +34,40 @@ deseq_main <- function(d=21,t=c("MB_Clostridia","Mb_only"),v="Treatment",physeq_
   #First process deseq and filter for significance
   deseq_results <- deseq_processing(d,t,v,physeq_object)
   deseq_results_filtered <- deseq_filtering(deseq_results)
-  barplot <- deseq_barplot(d,t,v,deseq_results_filtered)
+  pointplot <- deseq_pointplot(d,t,v,deseq_results_filtered) + theme_bw() +
+    geom_vline(xintercept=0)
   # volcano <- deseq_volcano(d,t,v,deseq_results_filtered) ## NOT WRITTEN YET
-  return(barplot)
+  return(pointplot)
 }
 
 deseq_main(d=v_day,t=v_treat,v="Treatment",physeq_object = phyloseq_object_final)
+```
+# Ok so that is not working. Let's do it stepwise without functions.
+```{r }
+load("phyloseq_object_final.RData")
+load("tax_matrix.RData")
+
+#Filter phyloseq to our day and treatments of interest, and glom by genus
+d=21
+t=c("MB_Clostridia","Clostridia_only")
+
+physeq_object <- ps_filter(phyloseq_object_final, day==d, Treatment%in%t) 
+physeq_genus <- tax_glom(physeq_object,"Genus")
+
+deseq_object <- phyloseq_to_deseq2(physeq_genus, ~Treatment) %>% DESeq()
+
+deseq_results <- deseq_object %>% results(tidy=TRUE)
+
+colnames(deseq_results)[1] <- "#OTU ID"
+deseq_results <- inner_join(tax_matrix,deseq_results, by = "#OTU ID" )
+
+deseq_results_sig <-  deseq_results %>%
+  filter(padj<0.05 & abs(log2FoldChange)>1.5)
+deseq_results_sig <- deseq_results_sig[order(deseq_results_sig$log2FoldChange),]
+
+deseq_pointplot(d,t,v,deseq_results_sig) + theme_bw() +
+    geom_vline(xintercept=0)
+
 ```
 
 ## DESEq2 processing
@@ -44,14 +75,14 @@ deseq_main(d=v_day,t=v_treat,v="Treatment",physeq_object = phyloseq_object_final
 ### Then performs DESEq2 analysis according to variable v
 ```{r }
 deseq_processing <- function(d=21,t=c("MB_Clostridia","Mb_only"),v="Treatment",physeq_object=phyloseq_object_final){
-  #Filter the phyloseq object by input variable
+  #Filter the phyloseq object by input variable and glom 
   physeq_object <- ps_filter(physeq_object, day==d, Treatment%in%t)
   design_formula <- as.formula(paste("~", v))
   #Produce a deseq object and add taxa informations
   deseq_object <- phyloseq_to_deseq2(physeq_object, design_formula) %>% DESeq()
   deseq_results <- deseq_object %>% results(tidy=TRUE)
   colnames(deseq_results)[1] <- "#OTU ID"
-  #Add taxa information for later.
+  # #Add taxa information for later.
   deseq_results <- inner_join(tax_matrix,deseq_results, by = "#OTU ID" )
   return(deseq_results)
 }
@@ -62,7 +93,7 @@ deseq_processing <- function(d=21,t=c("MB_Clostridia","Mb_only"),v="Treatment",p
 deseq_filtering <- function(deseq_results_taxa){
     ## Filter DESEq for significance p<0.01 and changes 2x or larger.
   deseq_results_sig <-  deseq_results_taxa %>%
-    filter( padj<0.01 & abs(log2FoldChange)>2)
+    filter( padj<0.05 & abs(log2FoldChange)>1.5)
   deseq_results_sig <- deseq_results_sig[order(deseq_results_sig$log2FoldChange),]
   return(deseq_results_sig)
 }
@@ -72,10 +103,27 @@ deseq_filtering <- function(deseq_results_taxa){
 ```{r }
 deseq_barplot <- function(d=21,t=c("MB_Clostridia","Mb_only"),v="Treatment",
                           desq_results=desq_results_sig) {
-  g <- ggplot(data = desq_results, aes(y = reorder(Genus, -(as.numeric(log2FoldChange))), 
-                                            x = log2FoldChange, fill = pvalue))+
-        geom_col() + ggtitle(paste("Differential abundance at day",d,"comparing between","\n",
-                                   paste(t,collapse=" & "), sep=" "))
+  g <- ggplot(data = desq_results, 
+              aes(y = reorder(Genus, -(as.numeric(log2FoldChange))), 
+                      x = log2FoldChange, fill = pvalue))+
+        geom_col() + 
+        labs(x="Log2 Fold Change",
+             y="Genus",
+             title=(paste("Differential abundance at day",d,"comparing between","\n",
+                                   paste(t,collapse=" & "), sep=" ")))
+  return(g)
+}
+
+deseq_pointplot <- function(d=21,t=c("MB_Clostridia","Mb_only"),v="Treatment",
+                          desq_results=desq_results_sig) {
+  g <- ggplot(data = desq_results, 
+              aes(y = reorder(Genus, -(as.numeric(log2FoldChange))), 
+                      x = log2FoldChange, color = pvalue))+
+        geom_point() + 
+        labs(x="Log2 Fold Change",
+             y="Genus",
+             title=(paste("Differential abundance at day",d,"comparing between","\n",
+                                   paste(t,collapse=" & "), sep=" ")))
   return(g)
 }
 ``` 
