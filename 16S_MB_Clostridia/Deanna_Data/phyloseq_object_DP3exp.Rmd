@@ -1,0 +1,75 @@
+---
+title: "DP_MB_N_I_P_phyloseq"
+author: "Apsara"
+date: "2024-10-07"
+output: html_document
+---
+
+This code has been modified by IP (10 Oct 2024) to include filtering, pruning, and rarefying of the phyloseq object prior to saving it as DP_phyloseq_object_final.RData
+
+It also produces a DP_tax_matrix.RData file containing taxonomic information in a more readable format.
+
+The resulting files are called in the DP_LogRatio_Work.Rmd code.
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(phyloseq)
+library(tidyr)
+library(readr)
+```
+
+##Load the files and make phyloseq object
+
+```{r phyloseq-object}
+metafp <-"sample_manifest_updated.txt"
+meta <- read_delim(metafp, delim="\t")
+
+meta <- separate(meta, samplename, into = c("experiment", "mouse", "day", "group"), sep = "_")
+meta<- subset(meta, day=="D0" & (group=="N"|group=="C"|group=="I"| group=="M"))
+
+otufp <- "feature-table.txt"
+otu <- read_delim(file= otufp, delim="\t", skip=1)
+
+taxfp <- "taxonomy.tsv"
+tax <- read_delim(taxfp, delim="\t")
+
+phylotreefp <- "tree.nwk"
+phylotree <-read_tree(phylotreefp)
+
+otu_mat <- as.matrix(otu[,-1])
+rownames(otu_mat) <-otu$'#OTU ID'
+OTU <- otu_table(otu_mat, taxa_are_rows=TRUE)
+
+samp_df <-as.data.frame(meta[,-1])
+rownames(samp_df)<-meta$`#SampleID`
+SAMP <-sample_data(samp_df)
+
+tax_mat <- tax %>% select(-Confidence)%>% 
+  separate(col=Taxon, sep="; ", into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")) %>%
+  as.matrix()
+tax_mat <-tax_mat[,-1]
+rownames(tax_mat)<-tax$`Feature ID`
+TAX <-tax_table(tax_mat)
+
+object <-phyloseq(OTU, SAMP,TAX,phylotree) 
+object_filt <- subset_taxa(object, Kingdom == "d__Bacteria" & Order!="o__Chloroplast" & Family !="f__Mitochondria")
+object_filt_samples <- prune_samples(sample_sums(object_filt)>100, object_filt)
+phyloseq_object_final <- rarefy_even_depth(object_filt_samples, rngseed = 1, sample.size =50000)
+
+sample_data(object)
+save(phyloseq_object_final,file="DP_phyloseq_object_final.RData")
+```
+
+### Create a taxonomy matrix
+```{r tax-matrix}
+## Now make tax_matrix into a data frame with OTU ID information
+rownames(tax_mat) <- tax$`Feature ID`
+tax_matrix <- tax_mat %>% as.data.frame()
+tax_matrix$Genus <- gsub("g__", "", tax_matrix$Genus)
+tax_matrix$Family <- gsub("f__", "", tax_matrix$Family)
+tax_matrix$'#OTU ID' <- tax$`Feature ID`
+colnames(tax_matrix)[colnames(tax_matrix) == 'Kingdom'] <- 'Domain'
+
+save(tax_matrix,file="DP_tax_matrix.RData")
+```
