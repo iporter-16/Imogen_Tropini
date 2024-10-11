@@ -195,7 +195,7 @@ for(g in all_genus){
     scale_fill_manual(values=colours) +
     theme_minimal()
   plotpath <- file.path("logratio_plots/genus", paste0(g, ".pdf"))
-  # ggsave(plotpath, plot = p, width = 8, height = 6)
+  ggsave(plotpath, plot = p, width = 8, height = 6)
 }
 #Plot all family graphs
 for(f in all_fams){
@@ -206,7 +206,7 @@ for(f in all_fams){
     scale_fill_manual(values=colours) +
     theme_minimal()
   plotpath <- file.path("logratio_plots/family", paste0(f, ".pdf"))
-  # ggsave(plotpath, plot = p, width = 8, height = 6)
+  ggsave(plotpath, plot = p, width = 8, height = 6)
 }
 
 ```
