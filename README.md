@@ -14,7 +14,7 @@ The following data were derived from the QIIME2 pipeline described in my lab not
 
 **C3_MiSeq_pivot_translocation.csv** contains the same data, filtered for taxa that were found translocated to the MLN by 24h post-BP.
 
-### CC BP Figure 6F
+### CC Tn BP
 
 For _Salmonella_ Tn library translocation and infection graphs. Data is from September 19 2024. Produces violin plots of GI infection, organ translocation. Takes in a .csv file that requires columns:
 
