@@ -22,7 +22,7 @@ axis_title_size = 14
 Feces. 
 Salmonella colonization in the feces after bowel prep over 3 days 
 ```{r}
-imo <- "Imogen_Salmonella_Tn_colonisation.csv"
+imo <- "Imogen_Salmonella_Tn_colonisation_fixed.csv"
 F2C_long<- read_csv(imo, show_col_types = FALSE) %>% 
   select(!Day) %>%
   pivot_longer(cols = starts_with("Day"), names_to="Day", values_to = "feces_CFU")%>%
@@ -60,8 +60,7 @@ C
 stats <- pairwise.wilcox.test(F2C_long$feces_CFU, F2C_long$Day)
 print("Wilcox test statistics:")
 print(stats[["p.value"]])
-ggsave("Figures/IP_ST_Colonization.png", device = "png", height = 4.90, width = 6)
-
+ggsave("Figures/IP_ST_Colonization_fixed.png", device = "png", height = 4.90, width = 6)
 ```
 
 Figure 2D. 
@@ -122,6 +121,5 @@ for (t in tissues){
   print(paste("Wilcoxon/MW p-value for ",t,"is",wmn_p,sep=" "))
 }
 
-ggsave("Figures/IP_ST_Translocation.png", device = "png", height = 4.90, width = 5.5)
-
+ggsave("Figures/IP_ST_Translocation_fixed.png", device = "png", height = 4.90, width = 5.5)
 ```

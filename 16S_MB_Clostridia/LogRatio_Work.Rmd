@@ -303,7 +303,7 @@ h <- Heatmap(for_heatmap,
         top_annotation = treatment_annotation)
 h
 # #Save the graph
-# png("test.png",width=20,height=20,units="cm",res=1200)
+png("test.png",width=20,height=20,units="cm",res=1200)
 # draw(h)
 # dev.off()
 
@@ -313,29 +313,4 @@ h
         #                  "Clos","Clos","Clos","Clos"),
         #                  levels=c("MB","MB+Clos","Clos")),
 
-```
-
-```{r random trash}
-# log_ratio_df <- phyloseq_fam_df %>%
-#     select(Sample, Family, LogRatio) %>%
-#     distinct()  # Ensure unique combinations
-# 
-# sample_data_df <- log_ratio_df %>%
-#     pivot_wider(names_from = Family, values_from = LogRatio, values_fill = NA)
-# 
-# # Merge LogRatios into the phyloseq object
-# # phyloseq_for_heatmap <- merge_phyloseq(
-# #     tax_glom(phyloseq_object_final,taxrank="Family"),
-# #     sample_data(sample_data_df)
-# # )
-# 
-# phyloseq_for_heatmap <- phyloseq_object_final %>% tax_fix(unknowns = c("f__uncultured")) %>%
-#   tax_transform(trans = "clr", rank = "Family")
-# 
-# 
-# 
-# taxa <- sample(tax_top(phyloseq_for_heatmap, n = 40), size = 20)
-# 
-# comp_heatmap(phyloseq_for_heatmap,
-#              taxa=taxa)
 ```
